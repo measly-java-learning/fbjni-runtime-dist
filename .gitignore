@@ -1,0 +1,11 @@
+# Build output
+build/
+dist/
+out/
+CMakeUserPresets.json
+
+# Gradle
+.gradle/
+
+# Python
+__pycache__/

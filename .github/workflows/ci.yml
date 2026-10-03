@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  natives:
+    name: Verify native archives
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Download the pinned archives
+        run: ./gradlew :fbjni-natives:fetchNatives
+
+      # Each archive must have been built by fbjni-conan's release workflow at exactly the pinned tag
+      - name: Verify build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release="$(sed -n 's/^fbjniRelease=//p' gradle.properties)"
+          archives=(~/.gradle/caches/fbjni-natives/"$release"/*.tar.gz)
+          test "${#archives[@]}" -eq 3
+          for archive in "${archives[@]}"; do
+            gh attestation verify "$archive" --repo measly-java-learning/fbjni-conan \
+              --signer-workflow measly-java-learning/fbjni-conan/.github/workflows/release.yml \
+              --source-ref "refs/tags/$release"
+          done
+
+  smoke:
+    name: smoke ${{ matrix.name }}
+    needs: natives
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, runner: ubuntu-24.04, java: "17" }
+          - { name: linux-x86_64-jdk25, runner: ubuntu-24.04, java: "25" }
+          - { name: linux-aarch64, runner: ubuntu-24.04-arm, java: "17" }
+          - { name: macos-arm64, runner: macos-15, java: "17" }
+          - { name: macos-x86_64, runner: macos-15, java: "17", rosetta: true, arch: x86_64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Gradle itself runs on the image's default JDK; setup-java below would replace JAVA_HOME
+      - name: Remember the default JDK
+        run: echo "DEFAULT_JAVA_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
+
+      # The arm64 macOS image has no x86_64 JDK; this one runs the smoke tests under Rosetta
+      - name: Install an x86_64 JDK
+        id: x64-jdk
+        if: matrix.rosetta
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: zulu
+          java-version: ${{ matrix.java }}
+          architecture: x64
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      # The images' JDKs live in the tool cache, where Gradle does not look: hand it every
+      # JAVA_HOME_17_* and JAVA_HOME_25_*, and let it find or download nothing else
+      - name: Build, unit tests and smoke tests
+        env:
+          SMOKE_JAVA_VERSION: ${{ matrix.java }}
+          SMOKE_JAVA_HOME: ${{ steps.x64-jdk.outputs.path }}
+          SMOKE_EXPECT_ARCH: ${{ matrix.arch }}
+        run: |
+          export JAVA_HOME="$DEFAULT_JAVA_HOME"
+          jdks="$(env | grep -E '^JAVA_HOME_(17|25)_' | cut -d= -f2- | paste -sd, -)"
+          echo "JDKs for Gradle: $jdks"
+          args=(
+            -Porg.gradle.java.installations.auto-detect=false
+            -Porg.gradle.java.installations.auto-download=false
+            "-Porg.gradle.java.installations.paths=$jdks"
+            "-PsmokeJavaVersion=$SMOKE_JAVA_VERSION"
+          )
+          if [ -n "$SMOKE_JAVA_HOME" ]; then
+            args+=("-PsmokeJavaHome=$SMOKE_JAVA_HOME")
+          fi
+          if [ -n "$SMOKE_EXPECT_ARCH" ]; then
+            args+=("-PsmokeExpectArch=$SMOKE_EXPECT_ARCH")
+          fi
+          ./gradlew build "${args[@]}"
+
+      - name: Report the smoke-test JVM
+        if: always()
+        run: "grep -ho 'smoke JVM: [^<]*' fbjni-natives/build/test-results/smokeTest/*.xml || true"
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reports-${{ matrix.name }}
+          path: fbjni-natives/build/reports/
+
+  publish-dry-run:
+    name: Publish dry run
+    needs: smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Sign, stage and check the Central bundle
+        run: |
+          jdks="$(env | grep -E '^JAVA_HOME_(17|25)_' | cut -d= -f2- | paste -sd, -)"
+          scripts/publish-dry-run.sh \
+            -Porg.gradle.java.installations.auto-detect=false \
+            -Porg.gradle.java.installations.auto-download=false \
+            "-Porg.gradle.java.installations.paths=$jdks"

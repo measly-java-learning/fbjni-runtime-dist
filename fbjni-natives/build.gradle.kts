@@ -127,12 +127,47 @@ sourceSets {
     }
 }
 
+// The host's resource directory, for the system-mode smoke test's java.library.path
+val hostResourceDir = providers.systemProperty("os.name").get().lowercase().let { os ->
+    when {
+        os.startsWith("mac") -> "macos"
+        providers.systemProperty("os.arch").get() in setOf("amd64", "x86_64") -> "linux-x86_64"
+        else -> "linux-aarch64"
+    }
+}
+
 testing {
     suites {
         named<JvmTestSuite>("test") {
             useJUnitJupiter(libs.versions.junit.get())
         }
+        // Runs against the built jar, not the class files, on the oldest supported JDK
+        register<JvmTestSuite>("smokeTest") {
+            useJUnitJupiter(libs.versions.junit.get())
+            dependencies {
+                implementation(files(tasks.jar))
+                implementation(libs.fbjni.java.only)
+                implementation(libs.soloader.nativeloader)
+            }
+            targets.all {
+                testTask.configure {
+                    javaLauncher = javaToolchains.launcherFor {
+                        languageVersion = JavaLanguageVersion.of(17)
+                    }
+                    // NativeLoader is global: one JVM per mode
+                    forkEvery = 1
+                    systemProperty(
+                        "java.library.path",
+                        layout.buildDirectory.dir("generated/natives/fbjni-natives/$hostResourceDir").get().asFile.path,
+                    )
+                }
+            }
+        }
     }
+}
+
+tasks.check {
+    dependsOn(testing.suites.named("smokeTest"))
 }
 
 tasks.jar {

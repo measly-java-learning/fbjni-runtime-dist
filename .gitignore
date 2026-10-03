@@ -6,6 +6,7 @@ CMakeUserPresets.json
 
 # Gradle
 .gradle/
+.kotlin/
 
 # Python
 __pycache__/

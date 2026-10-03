@@ -1,0 +1,11 @@
+[versions]
+fbjni = "0.8.1"
+nativeloader = "0.10.5"
+junit = "6.0.1"
+
+[libraries]
+fbjni-java-only = { module = "com.facebook.fbjni:fbjni-java-only", version.ref = "fbjni" }
+soloader-nativeloader = { module = "com.facebook.soloader:nativeloader", version.ref = "nativeloader" }
+
+[plugins]
+maven-publish = { id = "com.vanniktech.maven.publish", version = "0.37.0" }

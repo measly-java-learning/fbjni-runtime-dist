@@ -16,7 +16,13 @@ class BundledExtractionSmokeTest {
 
     @Test
     void loadsTheBundledLibraryFromTheCache() throws Exception {
-        assertEquals(17, Runtime.version().feature(), "smoke tests run on the oldest supported JDK");
+        System.out.println("smoke JVM: " + System.getProperty("java.vendor") + " " + System.getProperty("java.version")
+                + " " + System.getProperty("os.arch"));
+        assertEquals(Integer.getInteger("fbjni.smoke.javaVersion"), Runtime.version().feature(), "smoke-test JVM version");
+        String expectedArch = System.getProperty("fbjni.smoke.osArch");
+        if (expectedArch != null) {
+            assertEquals(expectedArch, System.getProperty("os.arch"), "smoke-test JVM architecture");
+        }
         System.setProperty("fbjni.shim.cachedir", cacheDir.toString());
         FbjniShim.init();
         new HybridData().resetNative();

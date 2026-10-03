@@ -127,6 +127,12 @@ sourceSets {
     }
 }
 
+// Smoke-test JVM: a toolchain of smokeJavaVersion (default 17), or the JDK at smokeJavaHome. CI uses
+// smokeJavaHome for an x86_64 JDK on an arm64 Mac, since a toolchain request cannot name an architecture.
+val smokeJavaVersion = providers.gradleProperty("smokeJavaVersion").getOrElse("17").toInt()
+val smokeJavaHome: String? = providers.gradleProperty("smokeJavaHome").orNull
+val smokeExpectArch: String? = providers.gradleProperty("smokeExpectArch").orNull
+
 // The host's resource directory, for the system-mode smoke test's java.library.path
 val hostResourceDir = providers.systemProperty("os.name").get().lowercase().let { os ->
     when {
@@ -141,7 +147,7 @@ testing {
         named<JvmTestSuite>("test") {
             useJUnitJupiter(libs.versions.junit.get())
         }
-        // Runs against the built jar, not the class files, on the oldest supported JDK
+        // Runs against the built jar, not the class files, on JDK 17 unless smokeJavaVersion or smokeJavaHome says otherwise
         register<JvmTestSuite>("smokeTest") {
             useJUnitJupiter(libs.versions.junit.get())
             dependencies {
@@ -151,8 +157,17 @@ testing {
             }
             targets.all {
                 testTask.configure {
-                    javaLauncher = javaToolchains.launcherFor {
-                        languageVersion = JavaLanguageVersion.of(17)
+                    if (smokeJavaHome != null) {
+                        executable = File(smokeJavaHome, "bin/java").path
+                    } else {
+                        javaLauncher = javaToolchains.launcherFor {
+                            languageVersion = JavaLanguageVersion.of(smokeJavaVersion)
+                        }
+                    }
+                    // Checked by BundledExtractionSmokeTest, so a run on the wrong JVM fails
+                    systemProperty("fbjni.smoke.javaVersion", smokeJavaVersion)
+                    if (smokeExpectArch != null) {
+                        systemProperty("fbjni.smoke.osArch", smokeExpectArch)
                     }
                     // NativeLoader is global: one JVM per mode
                     forkEvery = 1

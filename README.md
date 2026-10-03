@@ -37,6 +37,8 @@ The build downloads the fbjni-conan release named by `fbjniRelease` in `gradle.p
 
 `-PsmokeJavaVersion=25` runs the smoke tests on another JDK version, and `-PsmokeJavaHome=/path/to/jdk` on a specific JDK; `-PsmokeExpectArch=x86_64` makes them check the JVM's `os.arch`.
 
+`scripts/publish-dry-run.sh` (Linux) signs a release with a throwaway GPG key, publishes it to `fbjni-natives/build/staging-repo` and checks it holds exactly what Maven Central needs. It uses no real keys or credentials and uploads nothing.
+
 ## Design
 
 The design, including the loader's cache rules and the build and publish pipeline, is kept in the [fbjni Desktop Packaging design doc](https://claude.ai/code/artifact/23b1789d-040e-4483-b481-8d19456cfc77).

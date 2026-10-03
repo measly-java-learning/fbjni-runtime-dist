@@ -225,3 +225,24 @@ mavenPublishing {
         }
     }
 }
+
+// Local repository for scripts/publish-dry-run.sh; Central uploads go through mavenPublishing
+publishing {
+    repositories {
+        maven {
+            name = "staging"
+            url = uri(layout.buildDirectory.dir("staging-repo"))
+        }
+    }
+}
+
+// The native libraries are generated resources, not source. vanniktech registers sourcesJar after
+// this script runs, so match it lazily by name.
+tasks.withType<Jar>().matching { it.name == "sourcesJar" }.configureEach {
+    exclude("fbjni-natives/**")
+}
+
+// JDK 23+ javadoc bundles about 4 MB of web fonts; leave them out of the javadoc jar
+tasks.javadoc {
+    (options as StandardJavadocDocletOptions).addBooleanOption("-no-fonts", true)
+}

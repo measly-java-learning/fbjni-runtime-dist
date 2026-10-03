@@ -1,3 +1,9 @@
+import java.net.URI
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.util.HexFormat
+
 plugins {
     `java-library`
     alias(libs.plugins.maven.publish)
@@ -33,6 +39,92 @@ dependencies {
     api(libs.fbjni.java.only)
     // Upstream declares nativeloader runtime-only; the shim compiles against it
     api(libs.soloader.nativeloader)
+}
+
+// Release archive platform suffix -> jar resource directory under fbjni-natives/
+val nativeArchives = mapOf(
+    "linux-x86_64" to "linux-x86_64",
+    "linux-aarch64" to "linux-aarch64",
+    "macos-universal2" to "macos",
+)
+val nativeArchivePrefix = "fbjni-${fbjniRelease.removePrefix("v")}"
+// Persistent cache outside build/, so it survives `./gradlew clean`
+val nativeArchiveDir = File(gradle.gradleUserHomeDir, "caches/fbjni-natives/$fbjniRelease")
+
+val fetchNatives = tasks.register("fetchNatives") {
+    description = "Downloads the pinned fbjni-conan release archives and verifies them against natives/SHA256SUMS."
+    // Local copies: task actions must not capture script-scope references (configuration cache)
+    val release = fbjniRelease
+    val archiveDir = nativeArchiveDir
+    val archives = nativeArchives.keys.map { "$nativeArchivePrefix-$it.tar.gz" }
+    val sums = rootProject.file("natives/SHA256SUMS")
+    inputs.file(sums)
+    inputs.property("release", release)
+    outputs.files(archives.map { File(archiveDir, it) })
+    doLast {
+        fun sha256(file: File): String = HexFormat.of()
+            .formatHex(MessageDigest.getInstance("SHA-256").digest(file.readBytes()))
+        val expected = sums.readLines().filter { it.isNotBlank() }.associate { line ->
+            val (hash, name) = line.trim().split(Regex("\\s+"), limit = 2)
+            name to hash
+        }
+        archiveDir.mkdirs()
+        for (name in archives) {
+            val want = expected[name] ?: throw GradleException("natives/SHA256SUMS has no entry for $name")
+            val file = File(archiveDir, name)
+            if (file.exists() && sha256(file) == want) {
+                continue
+            }
+            val url = "https://github.com/measly-java-learning/fbjni-conan/releases/download/$release/$name"
+            logger.lifecycle("Downloading $url")
+            val part = File(archiveDir, "$name.part")
+            URI(url).toURL().openStream().use { input -> part.outputStream().use { input.copyTo(it) } }
+            val actual = sha256(part)
+            if (actual != want) {
+                part.delete()
+                throw GradleException("$name has SHA-256 $actual, but natives/SHA256SUMS says $want")
+            }
+            Files.move(
+                part.toPath(), file.toPath(),
+                StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE,
+            )
+        }
+    }
+}
+
+val prepareNatives = tasks.register<Sync>("prepareNatives") {
+    description = "Extracts libfbjni from each release archive and writes fbjni-natives.properties."
+    dependsOn(fetchNatives)
+    for ((suffix, dir) in nativeArchives) {
+        from(tarTree(File(nativeArchiveDir, "$nativeArchivePrefix-$suffix.tar.gz"))) {
+            include("*/lib/libfbjni.*")
+            eachFile { path = "fbjni-natives/$dir/$name" }
+        }
+    }
+    into(layout.buildDirectory.dir("generated/natives"))
+    includeEmptyDirs = false
+    val outDir = layout.buildDirectory.dir("generated/natives/fbjni-natives").get().asFile
+    val resourceDirs = nativeArchives.values.sorted()
+    val manifestVersion = version.toString()
+    val release = fbjniRelease
+    inputs.property("version", manifestVersion)
+    doLast {
+        val lines = mutableListOf("version=$manifestVersion", "nativeRelease=$release")
+        for (dir in resourceDirs) {
+            val lib = File(outDir, dir).listFiles()?.singleOrNull()
+                ?: throw GradleException("expected exactly one libfbjni in $outDir/$dir")
+            val hash = HexFormat.of()
+                .formatHex(MessageDigest.getInstance("SHA-256").digest(lib.readBytes()))
+            lines += "sha256.$dir=$hash"
+        }
+        File(outDir, "fbjni-natives.properties").writeText(lines.joinToString("\n", postfix = "\n"))
+    }
+}
+
+sourceSets {
+    main {
+        resources.srcDir(prepareNatives)
+    }
 }
 
 testing {

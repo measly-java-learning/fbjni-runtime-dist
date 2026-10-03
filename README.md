@@ -35,6 +35,10 @@ The library is extracted once per version to `-Dfbjni.shim.cachedir`, else `FBJN
 
 The build downloads the fbjni-conan release named by `fbjniRelease` in `gradle.properties` and fails unless every archive matches `natives/SHA256SUMS`. To move to a new native build, change both in one commit. Unit tests run on JDK 25; smoke tests load the library from the built jar on JDK 17.
 
+## Design
+
+The design, including the loader's cache rules and the build and publish pipeline, is kept in the [fbjni Desktop Packaging design doc](https://claude.ai/code/artifact/23b1789d-040e-4483-b481-8d19456cfc77).
+
 ## Status
 
 Work in progress.

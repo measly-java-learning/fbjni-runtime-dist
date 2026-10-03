@@ -10,3 +10,9 @@ CMakeUserPresets.json
 
 # Python
 __pycache__/
+
+# Eclipse / Buildship
+.project
+.classpath
+.settings/
+bin/

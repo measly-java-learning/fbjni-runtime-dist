@@ -3,6 +3,7 @@ package org.measly.fbjni;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -146,6 +147,8 @@ class LibraryCacheTest {
     @Test
     void requirePrivateRejectsAnotherOwner() throws IOException {
         UserPrincipal root = FileSystems.getDefault().getUserPrincipalLookupService().lookupPrincipalByName("root");
+        // As root (for example in a container) the temp dir is root's own, so root is not another owner
+        assumeFalse(root.equals(Files.getOwner(tmp)), "running as root");
         assertThrows(IOException.class, () -> LibraryCache.requirePrivate(tmp, root));
     }
 

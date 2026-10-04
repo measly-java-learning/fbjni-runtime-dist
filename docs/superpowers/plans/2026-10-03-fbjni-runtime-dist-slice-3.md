@@ -331,7 +331,8 @@ Stop and ask the user to confirm the release: pushing `v0.8.1-1` publishes `org.
 - [ ] **Step 3: Tag and push**
 
 ```bash
-git tag -a v0.8.1-1 -m "fbjni-natives 0.8.1-1" "$head"
+# HEAD is the commit Step 1 pushed and CI passed
+git tag -a v0.8.1-1 -m "fbjni-natives 0.8.1-1" HEAD
 git push origin v0.8.1-1
 until run_id="$(gh run list --repo measly-java-learning/fbjni-runtime-dist --workflow release.yml --limit 1 --json databaseId,headBranch -q '.[] | select(.headBranch == "v0.8.1-1") | .databaseId')" && [ -n "$run_id" ]; do sleep 5; done
 gh run watch "$run_id" --repo measly-java-learning/fbjni-runtime-dist --exit-status

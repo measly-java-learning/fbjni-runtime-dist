@@ -65,7 +65,7 @@ The design, including the loader's cache rules and the build and publish pipelin
 
 ## Status
 
-Work in progress.
+Released: `0.8.1-1` (fbjni 0.8.1, native build `v0.8.1-r1`). Next: a test JNI library proving that a consumer's own library resolves against the libfbjni the shim loaded.
 
 ## License
 

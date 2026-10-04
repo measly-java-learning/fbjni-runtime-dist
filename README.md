@@ -13,7 +13,23 @@ It depends on upstream's `com.facebook.fbjni:fbjni-java-only` for the Java class
 
 ## Usage
 
-Call `FbjniShim.init()` once before using any `com.facebook.jni` class:
+Add the dependency; it brings in `fbjni-java-only` and SoLoader's `nativeloader`:
+
+```kotlin
+dependencies {
+    implementation("org.measly:fbjni-natives:0.8.1-1")
+}
+```
+
+```xml
+<dependency>
+  <groupId>org.measly</groupId>
+  <artifactId>fbjni-natives</artifactId>
+  <version>0.8.1-1</version>
+</dependency>
+```
+
+Then call `FbjniShim.init()` once before using any `com.facebook.jni` class:
 
 ```java
 org.measly.fbjni.FbjniShim.init();
@@ -38,6 +54,10 @@ The build downloads the fbjni-conan release named by `fbjniRelease` in `gradle.p
 `-PsmokeJavaVersion=25` runs the smoke tests on another JDK version, and `-PsmokeJavaHome=/path/to/jdk` on a specific JDK; `-PsmokeExpectArch=x86_64` makes them check the JVM's `os.arch`.
 
 `scripts/publish-dry-run.sh` (Linux) signs a release with a throwaway GPG key, publishes it to `fbjni-natives/build/staging-repo` and checks it holds exactly what Maven Central needs. It uses no real keys or credentials and uploads nothing.
+
+## Releasing
+
+The Maven version is the fbjni version plus `releaseAttempt` from `gradle.properties` (`0.8.1-1`). Maven Central releases are permanent, so any change to a published version, a packaging fix or a new native build (`fbjniRelease` and `natives/SHA256SUMS`), bumps `releaseAttempt`. Merge that to `main`, wait for CI to pass, then push the tag `v<version>`: `release.yml` runs all of CI again, publishes to Maven Central and creates the GitHub Release.
 
 ## Design
 

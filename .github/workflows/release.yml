@@ -1,0 +1,67 @@
+name: Release
+
+# Pushing a tag v<Maven version> (v0.8.1-1) runs all of CI, then publishes that version to Maven
+# Central and records it as a GitHub Release. Central releases are permanent: a fix is a new
+# releaseAttempt in gradle.properties (0.8.1-2) and a new tag, never a re-upload.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish to Maven Central
+    needs: ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Check the tag matches the build's version
+        id: version
+        run: |
+          version="$(./gradlew -q :fbjni-natives:properties --property version | sed -n 's/^version: //p')"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match the build's version $version (fbjniRelease and releaseAttempt in gradle.properties)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "native=$(sed -n 's/^fbjniRelease=//p' gradle.properties)" >> "$GITHUB_OUTPUT"
+
+      # Keeps the signing key out of the configuration cache, as the org's publish workflows do
+      - name: Publish and release
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.ORG_GRADLE_PROJECT_MAVENCENTRALUSERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.ORG_GRADLE_PROJECT_MAVENCENTRALPASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.ORG_GRADLE_PROJECT_SIGNINGINMEMORYKEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.ORG_GRADLE_PROJECT_SIGNINGINMEMORYKEYPASSWORD }}
+        run: |
+          jdks="$(env | grep -E '^JAVA_HOME_(17|25)_' | cut -d= -f2- | paste -sd, -)"
+          ./gradlew --no-configuration-cache publishAndReleaseToMavenCentral \
+            -Porg.gradle.java.installations.auto-detect=false \
+            -Porg.gradle.java.installations.auto-download=false \
+            "-Porg.gradle.java.installations.paths=$jdks"
+
+      - name: Record the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          NATIVE: ${{ steps.version.outputs.native }}
+        run: |
+          cat > notes.md <<EOF
+          Maven Central: \`org.measly:fbjni-natives:$VERSION\` ([Central](https://central.sonatype.com/artifact/org.measly/fbjni-natives/$VERSION); it can take up to 30 minutes to appear).
+
+          Packs the libfbjni builds from fbjni-conan [$NATIVE](https://github.com/measly-java-learning/fbjni-conan/releases/tag/$NATIVE): Linux x86_64 and aarch64 (glibc 2.28 or later) and macOS universal2 (macOS 11.0 or later). Needs Java 17 or later.
+
+          Built, tested and published by [this run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID).
+          EOF
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "fbjni-natives $VERSION" --notes-file notes.md

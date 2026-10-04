@@ -1,3 +1,4 @@
+import com.vanniktech.maven.publish.DeploymentValidation
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -192,7 +193,9 @@ tasks.jar {
 }
 
 mavenPublishing {
-    publishToMavenCentral()
+    // Tagged releases upload and release in one step, like the org's other repos. The job waits
+    // until the Portal has validated the deployment, so a rejected bundle fails the release job.
+    publishToMavenCentral(automaticRelease = true, validateDeployment = DeploymentValidation.VALIDATED)
     signAllPublications()
 
     coordinates(group.toString(), "fbjni-natives", version.toString())
